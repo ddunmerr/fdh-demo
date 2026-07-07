@@ -1,0 +1,113 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Product;
+use App\Services\CartService;
+use App\Services\CheckoutService;
+use Illuminate\Http\Request;
+
+class CartController
+{
+    public function __construct(
+        private CartService $cartService,
+        private CheckoutService $checkoutService,
+    ) {}
+
+    public function index()
+    {
+        return view('cart.index', [
+            'cart' => $this->cartService->getCartItems(),
+            'total' => $this->cartService->getTotal(),
+        ]);
+    }
+
+    public function add(Request $request, Product $product)
+    {
+        $quantity = $request->input('quantity', 1);
+
+        if ($quantity > $product->stock) {
+            return back()->with('error', 'Недостаточно товара на складе');
+        }
+
+        $newQuantity = $quantity;
+        if ($this->cartService->isInCart($product->id)) {
+            $cart = $this->cartService->getCartItems();
+            $newQuantity = $cart[$product->id]['quantity'] + $quantity;
+        }
+
+        if ($newQuantity > $product->stock) {
+            return back()->with('error', 'Недостаточно товара на складе');
+        }
+
+        $this->cartService->addProduct($product, $quantity);
+
+        return redirect()->route('cart.index')->with('success', 'Товар добавлен в корзину');
+    }
+
+    public function update(Request $request, $productId)
+    {
+        $quantity = $request->input('quantity', 1);
+
+        if (!$this->cartService->isInCart($productId)) {
+            return back()->with('error', 'Товар не найден в корзине');
+        }
+
+        $this->cartService->updateQuantity($productId, $quantity);
+
+        return redirect()->route('cart.index')->with('success', 'Корзина обновлена');
+    }
+
+    public function remove($productId)
+    {
+        $this->cartService->removeItem($productId);
+
+        return redirect()->route('cart.index')
+            ->with('success', 'Товар удален из корзины');
+    }
+
+    public function clear()
+    {
+        $this->cartService->clear();
+
+        return redirect()->route('cart.index')
+            ->with('success', 'Корзина очищена');
+    }
+
+    public function checkout()
+    {
+        $cart = $this->cartService->getCartItems();
+
+        if (empty($cart)) {
+            return redirect()->route('cart.index')->with('error', 'Корзина пуста');
+        }
+
+        return view('cart.checkout', [
+            'cart' => $cart,
+            'total' => $this->cartService->getTotal(),
+        ]);
+    }
+
+    public function processCheckout(Request $request)
+    {
+        $validated = $request->validate([
+            'customer_name' => 'required|string|max:255',
+            'customer_email' => 'required|email|max:255',
+            'customer_phone' => 'required|string|max:20',
+            'shipping_address' => 'required|string',
+            'comment' => 'nullable|string',
+        ]);
+
+        $cart = $this->cartService->getCartItems();
+
+        if (empty($cart)) {
+            return redirect()->route('cart.index')->with('error', 'Корзина пуста');
+        }
+
+        $this->checkoutService->process($validated, $cart);
+        $this->cartService->clear();
+
+        return redirect()->route('home')
+            ->with('success', 'Заказ оформлен! Спасибо за покупку.');
+    }
+}
