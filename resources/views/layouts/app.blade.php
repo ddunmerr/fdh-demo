@@ -64,7 +64,10 @@
                     </span>
                     @if(Auth::user()->is_admin ?? false)
                         <a href="{{ route('admin.products.index') }}" class="btn btn-outline-warning">
-                            <i class="bi bi-gear"></i> Админ
+                            <i class="bi bi-gear"></i> Товары
+                        </a>
+                        <a href="{{ route('admin.orders.index') }}" class="btn btn-outline-info">
+                            <i class="bi bi-box"></i> Заказы
                         </a>
                     @endif
                     <form action="{{ route('logout') }}" method="POST" class="d-inline">

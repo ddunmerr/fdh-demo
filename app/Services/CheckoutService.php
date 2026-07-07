@@ -2,14 +2,20 @@
 
 namespace App\Services;
 
+use App\Contracts\CheckoutServiceInterface;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Contracts\Auth\Guard;
+use Illuminate\Database\ConnectionInterface;
 
-class CheckoutService
+class CheckoutService implements CheckoutServiceInterface
 {
+    public function __construct(
+        private Guard $auth,
+        private ConnectionInterface $db,
+    ) {}
+
     public function process(array $validated, array $cart): void
     {
         $total = 0;
@@ -17,9 +23,9 @@ class CheckoutService
             $total += $item['price'] * $item['quantity'];
         }
 
-        DB::transaction(function () use ($validated, $cart, $total) {
+        $this->db->transaction(function () use ($validated, $cart, $total) {
             $order = Order::create([
-                'user_id' => Auth::id(),
+                'user_id' => $this->auth->id(),
                 'customer_name' => $validated['customer_name'],
                 'customer_email' => $validated['customer_email'],
                 'customer_phone' => $validated['customer_phone'],

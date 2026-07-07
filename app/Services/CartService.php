@@ -2,24 +2,27 @@
 
 namespace App\Services;
 
-use App\Models\CartItem;
+use App\Contracts\CartServiceInterface;
+use App\Contracts\CartStorageInterface;
 use App\Models\Product;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Contracts\Auth\Guard;
 
-class CartService
+class CartService implements CartServiceInterface
 {
+    public function __construct(
+        private CartStorageInterface $storage,
+        private Guard $auth,
+    ) {}
+
     public function getCartItems(): array
     {
-        if (Auth::check()) {
-            return $this->getDbCartItems();
-        }
-        return $this->getSessionCartItems();
+        return $this->storage->getItems();
     }
 
     public function getTotal(): float
     {
         $total = 0;
-        foreach ($this->getCartItems() as $item) {
+        foreach ($this->storage->getItems() as $item) {
             $total += $item['price'] * $item['quantity'];
         }
         return $total;
@@ -27,151 +30,43 @@ class CartService
 
     public function getCartCount(): int
     {
-        if (Auth::check()) {
-            return CartItem::where('user_id', Auth::id())->count();
-        }
-        return count(session()->get('cart', []));
+        return $this->storage->getCount();
     }
 
     public function addProduct(Product $product, int $quantity): void
     {
-        if (Auth::check()) {
-            $this->addDb($product, $quantity);
-        } else {
-            $this->addSession($product, $quantity);
-        }
+        $this->storage->add($product, $quantity);
     }
 
     public function updateQuantity(int $productId, int $quantity): void
     {
-        if (Auth::check()) {
-            $this->updateDb($productId, $quantity);
-        } else {
-            $this->updateSession($productId, $quantity);
-        }
+        $this->storage->updateQuantity($productId, $quantity);
     }
 
     public function removeItem(int $productId): void
     {
-        if (Auth::check()) {
-            CartItem::where('user_id', Auth::id())->where('product_id', $productId)->delete();
-        } else {
-            $cart = session()->get('cart', []);
-            unset($cart[$productId]);
-            session()->put('cart', $cart);
-        }
+        $this->storage->remove($productId);
     }
 
     public function clear(): void
     {
-        if (Auth::check()) {
-            CartItem::where('user_id', Auth::id())->delete();
-        } else {
-            session()->forget('cart');
-        }
+        $this->storage->clear();
     }
 
     public function isInCart(int $productId): bool
     {
-        if (Auth::check()) {
-            return CartItem::where('user_id', Auth::id())->where('product_id', $productId)->exists();
-        }
-        return isset(session()->get('cart', [])[$productId]);
+        return $this->storage->isInCart($productId);
     }
 
-    private function getDbCartItems(): array
+    public function getCurrentQuantityInCart(int $productId): int
     {
-        $cartItems = CartItem::with('product')->where('user_id', Auth::id())->get();
-        $cart = [];
-
-        foreach ($cartItems as $item) {
-            $product = $item->product;
-            if (!$product) continue;
-
-            $cart[$product->id] = [
-                'id' => $product->id,
-                'name' => $product->name,
-                'price' => (float) $product->price,
-                'quantity' => $item->quantity,
-                'image' => $product->image,
-                'slug' => $product->slug,
-                'stock' => $product->stock,
-            ];
-        }
-
-        return $cart;
+        $items = $this->storage->getItems();
+        return $items[$productId]['quantity'] ?? 0;
     }
 
-    private function getSessionCartItems(): array
+    public function canAddToCart(Product $product, int $quantity): bool
     {
-        return session()->get('cart', []);
-    }
-
-    private function addDb(Product $product, int $quantity): void
-    {
-        $cartItem = CartItem::where('user_id', Auth::id())
-            ->where('product_id', $product->id)
-            ->first();
-
-        if ($cartItem) {
-            $cartItem->increment('quantity', $quantity);
-        } else {
-            CartItem::create([
-                'user_id' => Auth::id(),
-                'product_id' => $product->id,
-                'quantity' => $quantity,
-            ]);
-        }
-    }
-
-    private function addSession(Product $product, int $quantity): void
-    {
-        $cart = session()->get('cart', []);
-
-        if (isset($cart[$product->id])) {
-            $cart[$product->id]['quantity'] += $quantity;
-        } else {
-            $cart[$product->id] = [
-                'id' => $product->id,
-                'name' => $product->name,
-                'price' => (float) $product->price,
-                'quantity' => $quantity,
-                'image' => $product->image,
-                'slug' => $product->slug,
-                'stock' => $product->stock,
-            ];
-        }
-
-        session()->put('cart', $cart);
-    }
-
-    private function updateDb(int $productId, int $quantity): void
-    {
-        $cartItem = CartItem::where('user_id', Auth::id())
-            ->where('product_id', $productId)
-            ->first();
-
-        if (!$cartItem) return;
-
-        if ($quantity <= 0) {
-            $cartItem->delete();
-        } else {
-            $cartItem->update(['quantity' => $quantity]);
-        }
-    }
-
-    private function updateSession(int $productId, int $quantity): void
-    {
-        $cart = session()->get('cart', []);
-
-        if (!isset($cart[$productId])) return;
-
-        if ($quantity <= 0) {
-            unset($cart[$productId]);
-        } else {
-            $cart[$productId]['quantity'] = $quantity;
-        }
-
-        session()->put('cart', $cart);
+        $currentQuantity = $this->getCurrentQuantityInCart($product->id);
+        return ($currentQuantity + $quantity) <= $product->stock;
     }
 }

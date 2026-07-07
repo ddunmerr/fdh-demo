@@ -2,13 +2,13 @@
 
 namespace App\View\Composers;
 
-use App\Services\CartService;
+use App\Contracts\CartServiceInterface;
 use Illuminate\View\View;
 
 class CartComposer
 {
     public function __construct(
-        private CartService $cartService
+        private CartServiceInterface $cartService
     ) {}
 
     public function compose(View $view): void

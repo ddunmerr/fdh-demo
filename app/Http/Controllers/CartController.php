@@ -2,16 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Contracts\CartServiceInterface;
+use App\Contracts\CheckoutServiceInterface;
+use App\Http\Requests\CheckoutRequest;
 use App\Models\Product;
-use App\Services\CartService;
-use App\Services\CheckoutService;
 use Illuminate\Http\Request;
 
 class CartController
 {
     public function __construct(
-        private CartService $cartService,
-        private CheckoutService $checkoutService,
+        private CartServiceInterface $cartService,
+        private CheckoutServiceInterface $checkoutService,
     ) {}
 
     public function index()
@@ -26,17 +27,7 @@ class CartController
     {
         $quantity = $request->input('quantity', 1);
 
-        if ($quantity > $product->stock) {
-            return back()->with('error', 'Недостаточно товара на складе');
-        }
-
-        $newQuantity = $quantity;
-        if ($this->cartService->isInCart($product->id)) {
-            $cart = $this->cartService->getCartItems();
-            $newQuantity = $cart[$product->id]['quantity'] + $quantity;
-        }
-
-        if ($newQuantity > $product->stock) {
+        if (!$this->cartService->canAddToCart($product, $quantity)) {
             return back()->with('error', 'Недостаточно товара на складе');
         }
 
@@ -88,23 +79,15 @@ class CartController
         ]);
     }
 
-    public function processCheckout(Request $request)
+    public function processCheckout(CheckoutRequest $request)
     {
-        $validated = $request->validate([
-            'customer_name' => 'required|string|max:255',
-            'customer_email' => 'required|email|max:255',
-            'customer_phone' => 'required|string|max:20',
-            'shipping_address' => 'required|string',
-            'comment' => 'nullable|string',
-        ]);
-
         $cart = $this->cartService->getCartItems();
 
         if (empty($cart)) {
             return redirect()->route('cart.index')->with('error', 'Корзина пуста');
         }
 
-        $this->checkoutService->process($validated, $cart);
+        $this->checkoutService->process($request->validated(), $cart);
         $this->cartService->clear();
 
         return redirect()->route('home')
